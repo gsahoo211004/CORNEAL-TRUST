@@ -62,6 +62,9 @@ class Corn1SegmentationDataset(Dataset):
             augmented = self.transform(image=image, mask=mask)
             image = augmented["image"]
             mask = augmented["mask"]
+            if mask.ndim == 2:
+                mask = mask.unsqueeze(0)
+            mask = (mask > self.mask_threshold).float()
         else:
             image = image.astype(np.float32) / 255.0
             image = np.expand_dims(image, axis=0)
