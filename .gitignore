@@ -1,0 +1,48 @@
+# Environment
+venv/
+.venv/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Data
+data/
+*.tif
+*.npy
+*.npz
+
+# Models / Checkpoints
+outputs/checkpoints/
+*.pth
+*.onnx
+*.pt
+
+# Logs
+outputs/logs/
+*.log
+
+# Jupyter
+.ipynb_checkpoints/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Config secrets
+.env
+configs/*.secret.yaml
+
+# WandB
+wandb/
+
+# Compiled
+*.so
+*.egg-info/
+dist/
+build/
