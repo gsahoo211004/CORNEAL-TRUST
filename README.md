@@ -46,6 +46,3 @@ CORNEAL_TRUST/
 ## Author
 
 **Gaurav Sahoo**
-School of Computer Science and Engineering (Data Science)
-Vellore Institute of Technology (VIT), Vellore
-gaurav.sahoo2022@vitstudent.ac.in
