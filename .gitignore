@@ -46,3 +46,7 @@ wandb/
 *.egg-info/
 dist/
 build/
+
+# Local reference files (NOT pushed to GitHub)
+CORNEAL_TRUST_Project_Plan.md
+PROJECT_STATUS.md
