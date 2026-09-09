@@ -1,0 +1,83 @@
+project:
+  name: CORNEAL-TRUST
+  seed: 42
+
+data:
+  data_root: ../CORN-1
+  image_size: 384
+  channels: 1
+  num_classes_seg: 2
+  num_classes_quality: 2
+  num_classes_severity: 4
+
+corn1:
+  root: ../CORN-1
+  image_dirs:
+    train: images/train_orig
+    val: images/val_orig
+    test: images/test_orig
+  label_dirs:
+    train: labels/train_label
+    val: labels/val_label
+    test: labels/test_label
+  image_ext: .tif
+  mask_threshold: 127
+
+corn2:
+  root: ../CORN-2
+  train_dirs:
+    high_quality: train/high-quality
+    low_quality: train/low-quality
+  test_dirs:
+    low_quality: test/low-quality
+  image_ext: .tif
+
+corn3:
+  root: ../CORN-3
+  grade_dirs:
+    0: grade1
+    1: grade2
+    2: grade3
+    3: grade4
+  image_ext: .tif
+
+corn1500:
+  root: ../CORN1500
+  level_dirs:
+    0: level1
+    1: level2
+    2: level3
+    3: level4
+  image_ext: .jpg
+
+training:
+  batch_size: 8
+  num_workers: 0
+  learning_rate: 0.001
+  epochs: 50
+  weight_decay: 0.0001
+  scheduler: cosine
+  early_stopping_patience: 10
+
+augmentation:
+  train:
+    horizontal_flip_prob: 0.5
+    vertical_flip_prob: 0.3
+    rotation_limit: 15
+    brightness_limit: 0.2
+    contrast_limit: 0.2
+    blur_limit: 3
+    noise_var: [10, 50]
+  val:
+    horizontal_flip_prob: 0.0
+    vertical_flip_prob: 0.0
+    rotation_limit: 0
+    brightness_limit: 0.0
+    contrast_limit: 0.0
+    blur_limit: 0
+    noise_var: [0, 0]
+
+output:
+  checkpoint_dir: outputs/checkpoints
+  log_dir: outputs/logs
+  result_dir: outputs/results
