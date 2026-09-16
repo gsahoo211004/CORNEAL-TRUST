@@ -1,9 +1,15 @@
-"""Phase 2: Train the corneal nerve segmentation U-Net (CORN-1).
+"""Phase 4: Train the CORN-2 binary image-quality classifier (CDTI Q_image).
+
+Classifies raw IVCCM captures as high (1) or low (0) quality, so the CDTI
+can discount trust for predictions made on unusable images.
+
+Trains on CORN-2 (train/high-quality + train/low-quality) and evaluates on
+CORN-2 test sets.
 
 Usage:
-    python scripts/train_segmentation.py                # uses configs/default.yaml
-    python scripts/train_segmentation.py --config my.yaml
-    python scripts/train_segmentation.py --epochs 10 --batch-size 4 --limit 100
+    python scripts/train_quality.py                            # configs/default.yaml
+    python scripts/train_quality.py --epochs 10 --batch-size 32
+    python scripts/train_quality.py --resume outputs/checkpoints/quality_corn2.pt
 """
 from __future__ import annotations
 
@@ -24,18 +30,18 @@ from src.utils.training import (
     set_seed, get_device, save_checkpoint, load_checkpoint, make_cosine_scheduler,
 )
 from src.data.datamodule import CornealDataModule
-from src.models import build_unet, AMCLLoss, SegmentationMetrics
+from src.models import build_quality_net, ClassificationMetrics
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Train CORNEAL-TRUST segmentation U-Net")
+    parser = argparse.ArgumentParser(description="Train CORNEAL-TRUST image-quality classifier")
     parser.add_argument("--config", type=str, default=None, help="Config YAML path")
     parser.add_argument("--epochs", type=int, default=None, help="Override epochs")
     parser.add_argument("--batch-size", type=int, default=None, help="Override batch size")
     parser.add_argument("--lr", type=float, default=None, help="Override learning rate")
     parser.add_argument("--num-workers", type=int, default=None, help="Override DataLoader workers")
     parser.add_argument("--limit", type=int, default=None, help="Limit training batches (debug)")
-    parser.add_argument("--limit-val", type=int, default=None, help="Limit val batches (debug)")
+    parser.add_argument("--limit-val", type=int, default=None, help="Limit test batches (debug)")
     parser.add_argument("--image-size", type=int, default=None, help="Override image size (debug)")
     parser.add_argument("--device", type=str, default=None, help="force device (cpu/cuda)")
     parser.add_argument("--out", type=str, default=None, help="checkpoint output path")
@@ -44,20 +50,19 @@ def parse_args() -> argparse.Namespace:
 
 
 @torch.no_grad()
-def evaluate(model, loader, loss_fn, device, limit: int | None = None) -> dict[str, float]:
-    """Evaluate the model on a validation loader."""
+def evaluate(model, loader, device, limit: int | None = None) -> dict[str, float]:
     model.eval()
-    metrics = SegmentationMetrics()
+    metrics = ClassificationMetrics(num_classes=model.num_classes)
     total_loss = 0.0
     n = 0
     for i, batch in enumerate(loader):
         if limit and i >= limit:
             break
         x = batch["image"].to(device)
-        y = batch["mask"].to(device)
-        pred = model(x)
-        total_loss += loss_fn(pred, y).item()
-        metrics.update(pred, y)
+        y = batch["label"].long().to(device)
+        logits = model(x)
+        total_loss += torch.nn.functional.cross_entropy(logits, y).item()
+        metrics.update(logits, y)
         n += 1
     res = metrics.results()
     res["loss"] = total_loss / max(n, 1)
@@ -72,48 +77,42 @@ def main() -> None:
     device = torch.device(args.device) if args.device else get_device()
     print(f"Device: {device}")
 
-    # Apply CLI overrides
-    train_cfg = cfg.setdefault("training", {})
+    q_cfg = cfg.setdefault("quality", {})
     if args.epochs:
-        train_cfg["epochs"] = args.epochs
+        q_cfg["epochs"] = args.epochs
     if args.batch_size:
-        train_cfg["batch_size"] = args.batch_size
+        q_cfg["batch_size"] = args.batch_size
     if args.lr:
-        train_cfg["learning_rate"] = args.lr
+        q_cfg["learning_rate"] = args.lr
     if args.num_workers is not None:
-        train_cfg["num_workers"] = args.num_workers
+        cfg.setdefault("training", {})["num_workers"] = args.num_workers
 
     if args.image_size:
         cfg.setdefault("data", {})["image_size"] = args.image_size
 
     dm = CornealDataModule(cfg)
-    train_loader = dm.get_train_loader("corn1")
-    val_loader = dm.get_val_loader("corn1")
+    batch_size = q_cfg.get("batch_size", 32)
+    train_loader = dm.get_train_loader("corn2", batch_size=batch_size)
+    test_loader = dm.get_test_loader("corn2", batch_size=batch_size)
 
-    model = build_unet(cfg).to(device)
-    loss_fn = AMCLLoss(
-        alpha=cfg.get("model", {}).get("loss_alpha", 1.0),
-        beta=cfg.get("model", {}).get("loss_beta", 0.5),
-    )
-
+    model = build_quality_net(cfg).to(device)
+    loss_fn = torch.nn.CrossEntropyLoss()
     optimizer = optim.AdamW(
         model.parameters(),
-        lr=train_cfg.get("learning_rate", 0.001),
-        weight_decay=train_cfg.get("weight_decay", 0.0001),
+        lr=q_cfg.get("learning_rate", 0.001),
+        weight_decay=q_cfg.get("weight_decay", 0.0001),
     )
-
-    epochs = int(train_cfg.get("epochs", 50))
+    epochs = int(q_cfg.get("epochs", 50))
     steps_per_epoch = len(train_loader)
     scheduler = make_cosine_scheduler(optimizer, total_steps=epochs * steps_per_epoch)
 
     out_path = Path(args.out) if args.out else (
-        ROOT / cfg.get("output", {}).get("checkpoint_dir", "outputs/checkpoints") / "unet_corn1.pt"
+        ROOT / cfg.get("output", {}).get("checkpoint_dir", "outputs/checkpoints")
+        / "quality_corn2.pt"
     )
 
-    print(f"Epochs: {epochs} | Samples/epoch: {steps_per_epoch} | Params: {sum(p.numel() for p in model.parameters()):,}", flush=True)
-
     start_epoch = 1
-    best_dice = 0.0
+    best_acc = 0.0
     if args.resume:
         state = load_checkpoint(args.resume, map_location=str(device))
         model.load_state_dict(state["model_state_dict"])
@@ -121,10 +120,15 @@ def main() -> None:
         if state.get("scheduler_state_dict"):
             scheduler.load_state_dict(state["scheduler_state_dict"])
         start_epoch = int(state.get("epoch", 0)) + 1
-        best_dice = float(state.get("best_dice", 0.0))
-        print(f"Resumed from {args.resume} (epoch {state.get('epoch')}, best_dice {best_dice:.4f})")
+        best_acc = float(state.get("best_acc", 0.0))
+        print(f"Resumed from {args.resume} (epoch {state.get('epoch')}, best_acc {best_acc:.4f})")
 
-    patience = int(train_cfg.get("early_stopping_patience", 10))
+    print(
+        f"Epochs: {epochs} | Train batches: {steps_per_epoch} | "
+        f"Test batches: {len(test_loader)} | Params: {sum(p.numel() for p in model.parameters()):,}"
+    )
+
+    patience = int(q_cfg.get("early_stopping_patience", 10))
     bad_epochs = 0
     for epoch in range(start_epoch, epochs + 1):
         model.train()
@@ -135,11 +139,11 @@ def main() -> None:
             if args.limit and i >= args.limit:
                 break
             x = batch["image"].to(device)
-            y = batch["mask"].to(device)
+            y = batch["label"].long().to(device)
 
             optimizer.zero_grad()
-            pred = model(x)
-            loss = loss_fn(pred, y)
+            logits = model(x)
+            loss = loss_fn(logits, y)
             loss.backward()
             optimizer.step()
             scheduler.step()
@@ -148,18 +152,18 @@ def main() -> None:
             running_n += 1
 
         avg_loss = running_loss / max(running_n, 1)
-        val_metrics = evaluate(model, val_loader, loss_fn, device, limit=args.limit_val)
+        test_metrics = evaluate(model, test_loader, device, limit=args.limit_val)
         elapsed = time.time() - start
         print(
             f"[{epoch:3d}/{epochs}] loss={avg_loss:.4f} "
-            f"val_loss={val_metrics['loss']:.4f} "
-            f"dice={val_metrics['dice']:.4f} iou={val_metrics['iou']:.4f} "
-            f"acc={val_metrics['accuracy']:.4f} ({elapsed:.1f}s)",
+            f"test_loss={test_metrics['loss']:.4f} "
+            f"test_acc={test_metrics['accuracy']:.4f} "
+            f"test_f1={test_metrics['macro_f1']:.4f} ({elapsed:.1f}s)",
             flush=True,
         )
 
-        if val_metrics["dice"] > best_dice:
-            best_dice = val_metrics["dice"]
+        if test_metrics["accuracy"] >= best_acc:
+            best_acc = test_metrics["accuracy"]
             bad_epochs = 0
             save_checkpoint(
                 {
@@ -167,20 +171,20 @@ def main() -> None:
                     "model_state_dict": model.state_dict(),
                     "optimizer_state_dict": optimizer.state_dict(),
                     "scheduler_state_dict": scheduler.state_dict(),
-                    "best_dice": best_dice,
+                    "best_acc": best_acc,
                     "config": cfg,
                 },
                 out_path,
             )
-            print(f"  -> checkpoint saved (dice={best_dice:.4f})", flush=True)
+            print(f"  -> checkpoint saved (test_acc={best_acc:.4f})", flush=True)
         else:
             bad_epochs += 1
             if bad_epochs >= patience:
                 print(f"Early stopping after {epoch} epochs (no improvement).")
                 break
 
-    print(f"\nDone. Best validation Dice: {best_dice:.4f}")
-    print(f"Checkpoint: {out_path}")
+    print(f"\nDone. Best test accuracy: {best_acc:.4f}", flush=True)
+    print(f"Checkpoint: {out_path}", flush=True)
 
 
 if __name__ == "__main__":

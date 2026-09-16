@@ -101,6 +101,37 @@ def macro_f1_score(
     return torch.stack(f1s).mean()
 
 
+def ece_score(
+    probs: torch.Tensor,
+    target: torch.Tensor,
+    n_bins: int = 10,
+) -> float:
+    """Expected Calibration Error for classification probabilities.
+
+    Bins samples by max predicted probability and compares mean bin
+    confidence to mean bin accuracy. Returns a scalar float in [0, 1]
+    (0 = perfectly calibrated).
+    """
+    conf, pred = probs.max(dim=1)
+    acc = (pred == target).float()
+    n = conf.numel()
+    if n == 0:
+        return 0.0
+    edges = torch.linspace(0.0, 1.0, n_bins + 1, device=probs.device)
+    ece = 0.0
+    for i in range(n_bins):
+        low, high = edges[i], edges[i + 1]
+        if i == n_bins - 1:
+            in_bin = (conf >= low) & (conf <= high)
+        else:
+            in_bin = (conf >= low) & (conf < high)
+        size = int(in_bin.sum().item())
+        if size == 0:
+            continue
+        ece += float((size / n) * (conf[in_bin].mean() - acc[in_bin].mean()).abs())
+    return ece
+
+
 class ClassificationMetrics:
     """Accumulates classification metrics (accuracy, macro-F1) across batches."""
 

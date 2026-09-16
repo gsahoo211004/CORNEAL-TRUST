@@ -102,38 +102,44 @@ class CornealDataModule:
             )
         return self._cache[cache_key]
 
-    def get_train_loader(self, dataset_key: str) -> DataLoader:
+    def get_train_loader(
+        self, dataset_key: str, batch_size: int | None = None
+    ) -> DataLoader:
         """Get training dataloader."""
         dataset = self.get_dataset(dataset_key, split="train")
         use_pin = torch.cuda.is_available()
         return DataLoader(
             dataset,
-            batch_size=self.batch_size,
+            batch_size=batch_size or self.batch_size,
             shuffle=True,
             num_workers=self.num_workers,
             pin_memory=use_pin,
             drop_last=False,
         )
 
-    def get_val_loader(self, dataset_key: str) -> DataLoader:
+    def get_val_loader(
+        self, dataset_key: str, batch_size: int | None = None
+    ) -> DataLoader:
         """Get validation dataloader."""
         dataset = self.get_dataset(dataset_key, split="val")
         use_pin = torch.cuda.is_available()
         return DataLoader(
             dataset,
-            batch_size=self.batch_size,
+            batch_size=batch_size or self.batch_size,
             shuffle=False,
             num_workers=self.num_workers,
             pin_memory=use_pin,
         )
 
-    def get_test_loader(self, dataset_key: str) -> DataLoader:
+    def get_test_loader(
+        self, dataset_key: str, batch_size: int | None = None
+    ) -> DataLoader:
         """Get test dataloader."""
         dataset = self.get_dataset(dataset_key, split="test")
         use_pin = torch.cuda.is_available()
         return DataLoader(
             dataset,
-            batch_size=self.batch_size,
+            batch_size=batch_size or self.batch_size,
             shuffle=False,
             num_workers=self.num_workers,
             pin_memory=use_pin,
