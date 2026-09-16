@@ -44,6 +44,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--epochs", type=int, default=None, help="Override epochs")
     parser.add_argument("--batch-size", type=int, default=None, help="Override batch size")
     parser.add_argument("--lr", type=float, default=None, help="Override learning rate")
+    parser.add_argument("--patience", type=int, default=None, help="Override early-stopping patience")
+    parser.add_argument("--class-balanced", action="store_true", help="class-balanced CE weights (softmax path)")
     parser.add_argument("--num-workers", type=int, default=None, help="Override DataLoader workers")
     parser.add_argument("--limit", type=int, default=None, help="Limit training batches (debug)")
     parser.add_argument("--limit-val", type=int, default=None, help="Limit val batches (debug)")
@@ -53,6 +55,21 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--evidential", action="store_true", help="train evidential (Dirichlet) head")
     parser.add_argument("--resume", type=str, default=None, help="checkpoint path to resume from")
     return parser.parse_args()
+
+
+def class_balance_weights(dataset) -> torch.Tensor | None:
+    """Inverse-frequency class weights from the training dataset labels."""
+    sources = getattr(dataset, "datasets", None) or [dataset]
+    counts = None
+    for ds in sources:
+        if hasattr(ds, "label_counts"):
+            counts = torch.tensor(ds.label_counts(), dtype=torch.float32)
+            break
+    if counts is None or counts.numel() == 0 or counts.sum().item() == 0:
+        return None
+    n = float(counts.sum().item())
+    k = int(counts.numel())
+    return n / (k * counts)
 
 
 @torch.no_grad()
@@ -107,6 +124,8 @@ def main() -> None:
         sev_cfg["batch_size"] = args.batch_size
     if args.lr:
         sev_cfg["learning_rate"] = args.lr
+    if args.patience:
+        sev_cfg["early_stopping_patience"] = args.patience
     if args.num_workers is not None:
         cfg.setdefault("training", {})["num_workers"] = args.num_workers
 
@@ -132,7 +151,12 @@ def main() -> None:
         loss_fn = None
     else:
         model = build_severity_net(cfg).to(device)
-        loss_fn = torch.nn.CrossEntropyLoss()
+        weight = None
+        if args.class_balanced:
+            weight = class_balance_weights(train_loader.dataset)
+            if weight is not None:
+                weight = weight.to(device)
+        loss_fn = torch.nn.CrossEntropyLoss(weight=weight)
 
     optimizer = optim.AdamW(
         model.parameters(),

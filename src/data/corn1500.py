@@ -44,6 +44,14 @@ class Corn1500SeverityDataset(Dataset):
     def __len__(self) -> int:
         return len(self.samples)
 
+    def label_counts(self) -> list[int]:
+        """Per-class sample counts (cheap — no image decode)."""
+        k = len(self.LEVEL_MAP) if self.LEVEL_MAP else 4
+        counts = [0] * k
+        for s in self.samples:
+            counts[s["label"]] += 1
+        return counts
+
     def __getitem__(self, idx: int) -> dict[str, Any]:
         sample = self.samples[idx]
         image = self._load_image(sample["image"])
