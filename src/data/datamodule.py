@@ -140,13 +140,17 @@ class CornealDataModule:
         )
 
     def get_combined_severity_loader(
-        self, split: str = "train", use_corn3_val: bool = True
+        self,
+        split: str = "train",
+        use_corn3_val: bool = True,
+        batch_size: int | None = None,
     ) -> DataLoader:
         """Get a combined CORN1500 + CORN-3 severity dataloader.
 
         For training: CORN1500 (primary) + CORN-3 (if available).
         For validation/test: CORN-3 only (held-out validation).
         """
+        batch_size = batch_size or self.batch_size
         datasets_list: list[Dataset] = []
 
         if split == "train":
@@ -179,7 +183,7 @@ class CornealDataModule:
         use_pin = torch.cuda.is_available()
         return DataLoader(
             combined,
-            batch_size=self.batch_size,
+            batch_size=batch_size,
             shuffle=(split == "train"),
             num_workers=self.num_workers,
             pin_memory=use_pin,

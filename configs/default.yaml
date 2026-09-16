@@ -50,6 +50,15 @@ corn1500:
     3: level4
   image_ext: .jpg
 
+model:
+  base_channels: 32
+  depth: 4
+  dropout: 0.0
+  loss_alpha: 1.0
+  loss_beta: 0.5
+  loss_gamma: 1.0
+  loss_delta: 1.0
+
 training:
   batch_size: 8
   num_workers: 0
@@ -58,6 +67,37 @@ training:
   weight_decay: 0.0001
   scheduler: cosine
   early_stopping_patience: 10
+
+severity:
+  model: severity_cnn
+  base_channels: 32
+  depth: 4
+  dropout: 0.2
+  num_classes: 4
+  batch_size: 32
+  learning_rate: 0.001
+  epochs: 50
+  weight_decay: 0.0001
+  early_stopping_patience: 10
+
+knowledge_graph:
+  # fiber_density is measured as a fraction of image pixels that are nerve
+  # (fiber pixel count / total pixels) -- a 0..1 proxy for clinical CNFD.
+  fiber_density_fraction:
+    low: 0.05       # below this => reduced nerve fibre density
+    very_low: 0.02  # below this => severe reduction
+  # tortuosity = path length / straight-line distance (>= 1.0)
+  tortuosity:
+    medium: 1.15
+    high: 1.5
+  # branching density per unit nerve length (junctions / nerve fiber pixel)
+  branching_per_fiber:
+    low: 0.004
+    very_low: 0.002
+  referral_window_days:
+    high: 7
+    medium: 14
+    low: 90
 
 augmentation:
   train:

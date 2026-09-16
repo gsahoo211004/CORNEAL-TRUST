@@ -11,8 +11,10 @@ def get_train_transforms(cfg: dict[str, Any] | None = None) -> A.Compose:
     if cfg is None:
         cfg = {}
     aug_cfg = cfg.get("augmentation", {}).get("train", {})
+    image_size = cfg.get("data", {}).get("image_size", 384)
 
     transforms = [
+        A.Resize(image_size, image_size, mask_interpolation=0),
         A.HorizontalFlip(p=aug_cfg.get("horizontal_flip_prob", 0.5)),
         A.VerticalFlip(p=aug_cfg.get("vertical_flip_prob", 0.3)),
         A.Affine(
@@ -47,9 +49,13 @@ def get_train_transforms(cfg: dict[str, Any] | None = None) -> A.Compose:
 
 
 def get_val_transforms(cfg: dict[str, Any] | None = None) -> A.Compose:
-    """Build validation/test transforms (normalize + tensor only)."""
+    """Build validation/test transforms (resize, normalize + tensor only)."""
+    if cfg is None:
+        cfg = {}
+    image_size = cfg.get("data", {}).get("image_size", 384)
     return A.Compose(
         [
+            A.Resize(image_size, image_size, mask_interpolation=0),
             A.Normalize(mean=[0.0], std=[1.0], max_pixel_value=255.0),
             ToTensorV2(),
         ]

@@ -67,3 +67,58 @@ class SegmentationMetrics:
         self.ious.clear()
         self.dices.clear()
         self.accs.clear()
+
+
+def accuracy_score(
+    logits: torch.Tensor, target: torch.Tensor
+) -> torch.Tensor:
+    """Top-1 accuracy for classification logits."""
+    pred = logits.argmax(dim=1)
+    return (pred == target).float().mean()
+
+
+def macro_f1_score(
+    logits: torch.Tensor, target: torch.Tensor, num_classes: int
+) -> torch.Tensor:
+    """Macro-averaged F1 for classification logits (per-batch).
+
+    Averaging is performed over classes that actually appear in the truth or
+    prediction, so a perfect prediction scores 1.0 even if some classes are
+    absent in the batch.
+    """
+    pred = logits.argmax(dim=1)
+    active = sorted(set(target.tolist()) | set(pred.tolist()))
+    if not active:
+        return torch.tensor(0.0)
+    f1s = []
+    for c in active:
+        tp = ((pred == c) & (target == c)).sum().float()
+        fp = ((pred == c) & (target != c)).sum().float()
+        fn = ((pred != c) & (target == c)).sum().float()
+        precision = tp / (tp + fp + 1e-6)
+        recall = tp / (tp + fn + 1e-6)
+        f1s.append(2 * precision * recall / (precision + recall + 1e-6))
+    return torch.stack(f1s).mean()
+
+
+class ClassificationMetrics:
+    """Accumulates classification metrics (accuracy, macro-F1) across batches."""
+
+    def __init__(self, num_classes: int) -> None:
+        self.num_classes = num_classes
+        self.accs: list[float] = []
+        self.f1s: list[float] = []
+
+    def update(self, logits: torch.Tensor, target: torch.Tensor) -> None:
+        self.accs.append(float(accuracy_score(logits, target).item()))
+        self.f1s.append(float(macro_f1_score(logits, target, self.num_classes).item()))
+
+    def results(self) -> dict[str, float]:
+        return {
+            "accuracy": float(np.mean(self.accs)) if self.accs else 0.0,
+            "macro_f1": float(np.mean(self.f1s)) if self.f1s else 0.0,
+        }
+
+    def reset(self) -> None:
+        self.accs.clear()
+        self.f1s.clear()
