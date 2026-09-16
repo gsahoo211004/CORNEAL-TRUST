@@ -32,6 +32,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--epochs", type=int, default=None, help="Override epochs")
     parser.add_argument("--batch-size", type=int, default=None, help="Override batch size")
     parser.add_argument("--lr", type=float, default=None, help="Override learning rate")
+    parser.add_argument("--num-workers", type=int, default=None, help="Override DataLoader workers")
     parser.add_argument("--limit", type=int, default=None, help="Limit training batches (debug)")
     parser.add_argument("--limit-val", type=int, default=None, help="Limit val batches (debug)")
     parser.add_argument("--image-size", type=int, default=None, help="Override image size (debug)")
@@ -75,6 +76,8 @@ def main() -> None:
         sev_cfg["batch_size"] = args.batch_size
     if args.lr:
         sev_cfg["learning_rate"] = args.lr
+    if args.num_workers is not None:
+        cfg.setdefault("training", {})["num_workers"] = args.num_workers
 
     if args.image_size:
         cfg.setdefault("data", {})["image_size"] = args.image_size
